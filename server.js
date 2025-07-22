@@ -1,85 +1,84 @@
-const express = require('express');
-const cors = require('cors');
+// backend/server.js
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DB_PATH = path.join('./db.json');
 
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-const trackingDB = [];
-
-// Generate random tracking ID
-function generateTrackingId() {
-  return 'TRK-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+// Load DB or initialize empty one
+let trackingDB = {};
+if (fs.existsSync(DB_PATH)) {
+  const raw = fs.readFileSync(DB_PATH);
+  trackingDB = JSON.parse(raw || '{}');
 }
 
-// POST /api/create — create tracking
+// Helper to persist to db.json
+function saveDB() {
+  fs.writeFileSync(DB_PATH, JSON.stringify(trackingDB, null, 2));
+}
+
+// Generate tracking ID
+function generateTrackingId() {
+  return `TRK-${uuidv4().split('-')[0].toUpperCase()}`;
+}
+
+// Create new tracking
 app.post('/api/create', (req, res) => {
   const { pickup, dropoff, weight } = req.body;
 
   if (!pickup || !dropoff || !weight) {
-    return res.status(400).json({ error: "Missing fields" });
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   const trackingId = generateTrackingId();
-  const newEntry = {
-    trackingId,
+  trackingDB[trackingId] = {
     pickup,
     dropoff,
     weight,
     status: 'Created',
-    lastUpdated: new Date().toISOString(),
+    lastUpdated: new Date().toISOString()
   };
 
-  trackingDB.push(newEntry);
+  saveDB(); // Persist to file
   res.json({ trackingId });
 });
 
-// GET /api/track/:trackingId — get tracking info
-app.get('/api/track/:trackingId', (req, res) => {
-  const { trackingId } = req.params;
-  const item = trackingDB.find(entry => entry.trackingId === trackingId);
-
-  if (!item) {
-    return res.status(404).json({ error: 'Tracking ID not found' });
-  }
-
-  res.json(item);
-});
-
-// PUT /api/update/:trackingId — update status
-app.put('/api/update/:trackingId', (req, res) => {
-  const { trackingId } = req.params;
+// Update tracking status
+app.put('/api/update/:id', (req, res) => {
+  const { id } = req.params;
   const { status } = req.body;
 
-  const item = trackingDB.find(entry => entry.trackingId === trackingId);
-
-  if (!item) {
+  if (!trackingDB[id]) {
     return res.status(404).json({ error: 'Tracking ID not found' });
   }
 
-  item.status = status;
-  item.lastUpdated = new Date().toISOString();
-  res.json({ message: 'Status updated', item });
+  trackingDB[id].status = status || trackingDB[id].status;
+  trackingDB[id].lastUpdated = new Date().toISOString();
+
+  saveDB();
+  res.json({ message: 'Tracking status updated', tracking: trackingDB[id] });
 });
 
-// POST /api/quote — return fake price based on weight
-app.post('/api/quote', (req, res) => {
-  const { pickup, dropoff, weight } = req.body;
+// Get tracking info
+app.get('/api/track/:id', (req, res) => {
+  const { id } = req.params;
 
-  if (!pickup || !dropoff || !weight) {
-    return res.status(400).json({ error: "Missing fields" });
+  if (!trackingDB[id]) {
+    return res.status(404).json({ error: 'Tracking ID not found' });
   }
 
-  const price = 5 + weight * 2.5;
-  res.json({ price });
+  res.json(trackingDB[id]);
 });
 
-// Home route
-app.get('/', (req, res) => {
-  res.send('iSHIP Backend is running.');
-});
-
+// Start server
 app.listen(PORT, () => {
   console.log(`🚚 iSHIP backend running on http://localhost:${PORT}`);
 });
