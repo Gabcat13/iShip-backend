@@ -1,80 +1,85 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
-const { loadTrackingData, saveTrackingData } = require('./db');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({
-  origin: ['https://firstchoiceshipping.netlify.app'], // your frontend domain
-  optionsSuccessStatus: 200
-}));
+app.use(cors());
 app.use(express.json());
 
-// ✅ Create Tracking
+const trackingDB = [];
+
+// Generate random tracking ID
+function generateTrackingId() {
+  return 'TRK-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+// POST /api/create — create tracking
 app.post('/api/create', (req, res) => {
   const { pickup, dropoff, weight } = req.body;
 
-  if (!pickup || !dropoff) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!pickup || !dropoff || !weight) {
+    return res.status(400).json({ error: "Missing fields" });
   }
 
-  const trackingId = uuidv4().slice(0, 8).toUpperCase();
+  const trackingId = generateTrackingId();
   const newEntry = {
     trackingId,
     pickup,
     dropoff,
     weight,
-    status: 'Order Received',
-    lastUpdated: new Date().toISOString()
+    status: 'Created',
+    lastUpdated: new Date().toISOString(),
   };
 
-  const data = loadTrackingData();
-  data.push(newEntry);
-  saveTrackingData(data);
-
-  res.json({ message: 'Tracking number created', trackingId });
+  trackingDB.push(newEntry);
+  res.json({ trackingId });
 });
 
-// ✅ Track Package
+// GET /api/track/:trackingId — get tracking info
 app.get('/api/track/:trackingId', (req, res) => {
   const { trackingId } = req.params;
-  const data = loadTrackingData();
+  const item = trackingDB.find(entry => entry.trackingId === trackingId);
 
-  const packageData = data.find(item => item.trackingId === trackingId);
-  if (!packageData) {
+  if (!item) {
     return res.status(404).json({ error: 'Tracking ID not found' });
   }
 
-  res.json(packageData);
+  res.json(item);
 });
 
-// ✅ Update Status
+// PUT /api/update/:trackingId — update status
 app.put('/api/update/:trackingId', (req, res) => {
   const { trackingId } = req.params;
   const { status } = req.body;
 
-  const data = loadTrackingData();
-  const index = data.findIndex(item => item.trackingId === trackingId);
+  const item = trackingDB.find(entry => entry.trackingId === trackingId);
 
-  if (index === -1) {
+  if (!item) {
     return res.status(404).json({ error: 'Tracking ID not found' });
   }
 
-  data[index].status = status || data[index].status;
-  data[index].lastUpdated = new Date().toISOString();
-  saveTrackingData(data);
-
-  res.json({ message: 'Status updated', trackingId });
+  item.status = status;
+  item.lastUpdated = new Date().toISOString();
+  res.json({ message: 'Status updated', item });
 });
 
-// ✅ Health check
+// POST /api/quote — return fake price based on weight
+app.post('/api/quote', (req, res) => {
+  const { pickup, dropoff, weight } = req.body;
+
+  if (!pickup || !dropoff || !weight) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  const price = 5 + weight * 2.5;
+  res.json({ price });
+});
+
+// Home route
 app.get('/', (req, res) => {
-  res.send('Courier Tracking API is running.');
+  res.send('iSHIP Backend is running.');
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚚 iSHIP backend running on http://localhost:${PORT}`);
 });
