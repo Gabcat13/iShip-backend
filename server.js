@@ -1,4 +1,4 @@
-// backend/server.js
+// server.js
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
@@ -9,27 +9,26 @@ import path from 'path';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS and JSON parsing
 app.use(cors());
 app.use(bodyParser.json());
 
-// Resolve db.json path
-const dbFilePath = path.resolve('./db.json');
+// Setup db.json path
+const dbPath = path.resolve('./db.json');
 
-// Load tracking data from file
+// Load DB
 function loadDB() {
-  if (!fs.existsSync(dbFilePath)) {
-    fs.writeFileSync(dbFilePath, JSON.stringify({}), 'utf-8');
+  if (!fs.existsSync(dbPath)) {
+    fs.writeFileSync(dbPath, JSON.stringify({}), 'utf-8');
   }
-  return JSON.parse(fs.readFileSync(dbFilePath, 'utf-8'));
+  return JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
 }
 
-// Save tracking data to file
+// Save DB
 function saveDB(data) {
-  fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf-8');
+  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// Generate a tracking ID
+// Generate tracking ID
 function generateTrackingId() {
   return `TRK-${uuidv4().split('-')[0].toUpperCase()}`;
 }
@@ -43,7 +42,7 @@ app.post('/api/create', (req, res) => {
   }
 
   const trackingId = generateTrackingId();
-  const trackingData = {
+  const newEntry = {
     pickup,
     dropoff,
     weight,
@@ -51,12 +50,17 @@ app.post('/api/create', (req, res) => {
     lastUpdated: new Date().toISOString()
   };
 
-  const db = loadDB();
-  db[trackingId] = trackingData;
-  saveDB(db);
+  try {
+    const db = loadDB();
+    db[trackingId] = newEntry;
+    saveDB(db);
 
-  console.log(`✅ Created tracking: ${trackingId}`);
-  res.json({ trackingId });
+    console.log(`✅ Tracking created: ${trackingId}`);
+    res.json({ trackingId });
+  } catch (err) {
+    console.error("❌ Failed to save tracking:", err);
+    res.status(500).json({ error: 'Failed to save tracking data' });
+  }
 });
 
 // Get tracking info
@@ -71,24 +75,7 @@ app.get('/api/track/:id', (req, res) => {
   res.json(db[id]);
 });
 
-// Update tracking info
-app.put('/api/update/:id', (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  const db = loadDB();
-
-  if (!db[id]) {
-    return res.status(404).json({ error: 'Tracking ID not found' });
-  }
-
-  db[id].status = status || db[id].status;
-  db[id].lastUpdated = new Date().toISOString();
-
-  saveDB(db);
-  res.json({ message: 'Tracking updated', tracking: db[id] });
-});
-
-// Start server
+// Server start
 app.listen(PORT, () => {
-  console.log(`🚚 Backend running on http://localhost:${PORT}`);
+  console.log(`🚚 Backend running at http://localhost:${PORT}`);
 });
